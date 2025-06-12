@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     name: Run Tests
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
@@ -34,28 +34,3 @@ jobs:
         with:
           name: test-results
           path: test-results.txt
-
-  deploy:
-    name: Deploy Application
-    runs-on: self-hosted   
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Download test results artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: test-results
-          path: ./artifacts
-
-      - name: Display test results
-        run: cat ./artifacts/test-results.txt
-
-      - name: Deploy Node.js Application
-        run: |
-          echo "Deploying Node.js app on self-hosted runner..."
-          # Add your deployment commands here, for example:
-          # pm2 restart your-app
-          # or npm start
