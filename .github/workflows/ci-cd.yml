@@ -61,3 +61,20 @@ jobs:
 
         - name: Install dependencies
           run: npm install
+
+        - name: Start application
+          shell: powershell
+          run: |
+            Write-Host "Launching src/service.js..."
+            Start-Process node -ArgumentList 'src/service.js' -NoNewWindow
+    
+        - name: Health-check
+          shell: powershell
+          run: |
+            try {
+              $res = Invoke-RestMethod http://localhost:3000/api
+              Write-Host "API OK:" $res.message
+            } catch {
+              Write-Error "Health-check failed"
+              exit 1
+            }
