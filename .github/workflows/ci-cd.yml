@@ -70,6 +70,10 @@ jobs:
             # Start in the background so this step can complete
             Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
 
+        - name: Wait for service to boot
+          shell: powershell
+          run: Start-Sleep -Seconds 5
+
         - name: Health-check
           shell: powershell
           run: |
