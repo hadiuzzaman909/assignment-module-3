@@ -65,10 +65,10 @@ jobs:
         - name: Start application
           shell: powershell
           run: |
-            Write-Host "Launching src/service.js…"
+            Write-Host "Launching src/server.js…"
             Set-Location $Env:GITHUB_WORKSPACE
             # Start in the background so this step can complete
-            Start-Process node -ArgumentList 'src/service.js' -NoNewWindow
+            Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
 
         - name: Health-check
           shell: powershell
