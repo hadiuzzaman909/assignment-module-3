@@ -2,16 +2,14 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   test:
     name: Run Tests
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows, x64]
 
     steps:
       - name: Checkout code
@@ -29,10 +27,37 @@ jobs:
         shell: powershell
         run: |
           npm run check > test-results.txt 2>&1
-          exit 0
 
       - name: Upload test results artifact
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: test-results.txt
+
+  deploy:
+      name: Deploy Application
+      needs: test
+      runs-on: [self-hosted, windows, x64]
+
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v3
+
+        - name: Download test results artifact
+          uses: actions/download-artifact@v3
+          with:
+            name: test-results
+            path: .
+
+        - name: Display test results
+          shell: powershell
+          run: Get-Content test-results.txt
+
+        - name: Setup Node.js
+          uses: actions/setup-node@v3
+          with:
+            node-version: 18
+
+        - name: Install dependencies
+          run: npm install
