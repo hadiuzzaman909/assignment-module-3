@@ -61,146 +61,32 @@ jobs:
 
         - name: Install dependencies
           run: npm install
-          
-        - name: Stop existing processes and cleanup
-          shell: powershell
-          run: |
-            Write-Host "Cleaning up existing processes..."
-            try {
 
-              Get-Process node -ErrorAction Stop | Stop-Process -Force
-              Write-Host "Existing Node processes stopped."
-            } catch {
-              Write-Host "No existing Node processes found."
-            }
-            
-            Start-Sleep -Seconds 2
-            
-            try {
-              $port3000 = Get-NetTCPConnection -LocalPort 3000 -ErrorAction Stop
-              if ($port3000) {
-                Write-Host "Port 3000 is in use, attempting to free it..."
-                $processId = $port3000.OwningProcess
-                Stop-Process -Id $processId -Force
-                Start-Sleep -Seconds 2
-              }
-            } catch {
-              Write-Host "Port 3000 is available."
-            }
-          
-        - name: Start application with enhanced logging
+        - name: Stop existing Node processes
           shell: powershell
           run: |
-            Write-Host "Starting application with enhanced logging..."
-            Set-Location $Env:GITHUB_WORKSPACE
-            
-            # Create a PowerShell script to capture both stdout and stderr
-            $startScript = @"
-            `$process = Start-Process node -ArgumentList 'src/server.js' -PassThru -NoNewWindow -RedirectStandardOutput 'app-stdout.log' -RedirectStandardError 'app-stderr.log'
-            Write-Host "Application started with PID: `$(`$process.Id)"
-            Write-Host "APP_PID=`$(`$process.Id)" | Out-File -FilePath temp-pid.txt
-            "@
-            
-            $startScript | Out-File -FilePath "start-app.ps1"
-            
-            # Execute the start script
-            & .\start-app.ps1
-            
-            # Read the PID from the temp file
-            $pidContent = Get-Content "temp-pid.txt"
-            $appPid = ($pidContent -split "=")[1]
-            echo "APP_PID=$appPid" >> $Env:GITHUB_ENV
-            
-            Write-Host "Application PID stored: $appPid"
-            
-            # Wait a moment and check initial logs
-            Start-Sleep -Seconds 3
-            
-            Write-Host "`n=== Initial Application Logs ==="
-            if (Test-Path "app-stdout.log") {
-              Write-Host "STDOUT:"
-              Get-Content "app-stdout.log"
-            } else {
-              Write-Host "No stdout log found"
-            }
-            
-            if (Test-Path "app-stderr.log") {
-              Write-Host "STDERR:"
-              Get-Content "app-stderr.log"
-            } else {
-              Write-Host "No stderr log found"
-            }
-            
-            # Verify process is still running
-            if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
-              Write-Host "✓ Application process is running."
-            } else {
-              Write-Error "✗ Application process died immediately after start."
-              exit 1
-            }
-          
-        - name: Wait for service initialization
+              Write-Host "Stopping any existing Node servers…"
+              Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force || Write-Host "No node processes found."
+
+        - name: Start application
           shell: powershell
           run: |
-            Write-Host "Waiting for service to initialize..."
-            $maxAttempts = 12
-            $attempt = 0
-            $success = $false
-            
-            while ($attempt -lt $maxAttempts -and -not $success) {
-              $attempt++
-              Write-Host "Attempt $attempt of $maxAttempts..."
-              
-              try {
-                if (-not (Get-Process -Id $Env:APP_PID -ErrorAction SilentlyContinue)) {
-                  Write-Error "Application process has stopped running."
-                  exit 1
-                }
-                
-                $response = Invoke-WebRequest -Uri "http://localhost:3000/api" -Method GET -TimeoutSec 5
-                if ($response.StatusCode -eq 200) {
-                  Write-Host "Service is responding!"
-                  $success = $true
-                }
-              } catch {
-                Write-Host "Service not ready yet, waiting 5 more seconds..."
-                Start-Sleep -Seconds 5
-              }
-            }
-            
-            if (-not $success) {
-              Write-Error "Service failed to start within expected time."
-              if (Test-Path "app.log") {
-                Write-Host "Recent application logs:"
-                Get-Content "app.log" -Tail 20
-              }
-              exit 1
-            }
-          
-        - name: Health check
+              Write-Host "Launching src/server.js…"
+              Set-Location $Env:GITHUB_WORKSPACE
+              Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
+
+        - name: Wait for service to boot
+          shell: powershell
+          run: Start-Sleep -Seconds 5
+
+        - name: Health-check
           shell: powershell
           run: |
             try {
-              Write-Host "Performing health check..."
-              $res = Invoke-RestMethod "http://localhost:3000/api" -TimeoutSec 10
-              Write-Host "API OK: $($res.message)"
+              $res = Invoke-RestMethod http://localhost:3000/api
+              Write-Host "API OK:" $res.message
             } catch {
-              Write-Error "Health check failed: $($_.Exception.Message)"
-              
-              Write-Host "Debug information:"
-              Write-Host "Process status:"
-              if (Get-Process -Id $Env:APP_PID -ErrorAction SilentlyContinue) {
-                Write-Host "Application process is still running."
-              } else {
-                Write-Host "Application process has stopped."
-              }
-              
-              try {
-                $portStatus = Get-NetTCPConnection -LocalPort 3000 -ErrorAction Stop
-                Write-Host "Port 3000 status: $($portStatus.State)"
-              } catch {
-                Write-Host "Port 3000 is not in use."
-              }
-              
+              Write-Error "Health-check failed"
               exit 1
             }
+            
