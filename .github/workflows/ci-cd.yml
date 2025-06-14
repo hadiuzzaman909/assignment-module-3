@@ -67,11 +67,9 @@ jobs:
           run: |
             Write-Host "Stopping any existing Node servers…"
             try {
-              # Attempt to find and stop any running node processes
               Get-Process node -ErrorAction Stop | Stop-Process -Force
               Write-Host "Existing Node processes stopped."
             } catch {
-              # If no node processes are found, swallow the error
               Write-Host "No node processes found."
             }
 
@@ -81,13 +79,11 @@ jobs:
             Write-Host "Launching src/server.js & verifying health…"
             Set-Location $Env:GITHUB_WORKSPACE
 
-            # Start the server as a background process we can track
             $proc = Start-Process node `
               -ArgumentList 'src/server.js' `
               -WorkingDirectory $Env:GITHUB_WORKSPACE `
               -PassThru
 
-            # Give it up to 15s to come up, polling every 3s
             $healthy = $false
             for ($i = 0; $i -lt 5; $i++) {
               Start-Sleep -Seconds 3
@@ -107,6 +103,3 @@ jobs:
               $proc | Stop-Process -Force
               exit 1
             }
-            
-            # Optionally keep the server alive, or kill if you don’t need it post-check
-            # $proc | Stop-Process -Force
