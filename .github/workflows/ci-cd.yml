@@ -79,18 +79,27 @@ jobs:
           shell: powershell
           run: |
             Write-Host "Launching src/server.js…"
-            Set-Location $Env:GITHUB_WORKSPACE
-            Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
+            # Full path to your script
+            $script = "$Env:GITHUB_WORKSPACE\src\server.js"
+            # Start Node with that script and correct cwd
+            Start-Process -FilePath node `
+              -ArgumentList $script `
+              -WorkingDirectory $Env:GITHUB_WORKSPACE `
+              -NoNewWindow
 
-        - name: Wait for service to boot
+        - name: Wait for service to boot (and debug)
           shell: powershell
-          run: Start-Sleep -Seconds 5
+          run: |
+            Write-Host "Sleeping 8s for server to bind..."
+            Start-Sleep -Seconds 8
+            Write-Host "Listening on port 3000?"
+            netstat -ano | Select-String ":3000"
 
         - name: Health-check
           shell: powershell
           run: |
             try {
-              $res = Invoke-RestMethod http://localhost:3000/api
+              $res = Invoke-RestMethod http://127.0.0.1:3000/api
               Write-Host "API OK:" $res.message
             } catch {
               Write-Error "Health-check failed"
