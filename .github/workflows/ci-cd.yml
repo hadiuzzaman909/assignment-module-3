@@ -61,38 +61,116 @@ jobs:
 
         - name: Install dependencies
           run: npm install
-
-        - name: Stop existing Node processes
+          
+        - name: Stop existing processes and cleanup
           shell: powershell
           run: |
-            Write-Host "Stopping any existing Node servers…"
+            Write-Host "Cleaning up existing processes..."
             try {
-              # Attempt to find and stop any running node processes
+
               Get-Process node -ErrorAction Stop | Stop-Process -Force
               Write-Host "Existing Node processes stopped."
             } catch {
-              # If no node processes are found, swallow the error
-              Write-Host "No node processes found."
+              Write-Host "No existing Node processes found."
             }
-
-        - name: Start application
+            
+            Start-Sleep -Seconds 2
+            
+            try {
+              $port3000 = Get-NetTCPConnection -LocalPort 3000 -ErrorAction Stop
+              if ($port3000) {
+                Write-Host "Port 3000 is in use, attempting to free it..."
+                $processId = $port3000.OwningProcess
+                Stop-Process -Id $processId -Force
+                Start-Sleep -Seconds 2
+              }
+            } catch {
+              Write-Host "Port 3000 is available."
+            }
+          
+        - name: Start application with logging
           shell: powershell
           run: |
-            Write-Host "Launching src/server.js…"
+            Write-Host "Starting application..."
             Set-Location $Env:GITHUB_WORKSPACE
-            Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
-
-        - name: Wait for service to boot
+            
+            $process = Start-Process node -ArgumentList 'src/server.js' -PassThru -NoNewWindow
+            
+            # Store process ID for later reference
+            Write-Host "Application started with PID: $($process.Id)"
+            echo "APP_PID=$($process.Id)" >> $Env:GITHUB_ENV
+            
+            # Wait and check if process is still running
+            Start-Sleep -Seconds 3
+            if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+              Write-Host "Application process is running."
+            } else {
+              Write-Error "Application process died immediately after start."
+              exit 1
+            }
+          
+        - name: Wait for service initialization
           shell: powershell
-          run: Start-Sleep -Seconds 5
-
-        - name: Health-check
+          run: |
+            Write-Host "Waiting for service to initialize..."
+            $maxAttempts = 12
+            $attempt = 0
+            $success = $false
+            
+            while ($attempt -lt $maxAttempts -and -not $success) {
+              $attempt++
+              Write-Host "Attempt $attempt of $maxAttempts..."
+              
+              try {
+                if (-not (Get-Process -Id $Env:APP_PID -ErrorAction SilentlyContinue)) {
+                  Write-Error "Application process has stopped running."
+                  exit 1
+                }
+                
+                $response = Invoke-WebRequest -Uri "http://localhost:3000/api" -Method GET -TimeoutSec 5
+                if ($response.StatusCode -eq 200) {
+                  Write-Host "Service is responding!"
+                  $success = $true
+                }
+              } catch {
+                Write-Host "Service not ready yet, waiting 5 more seconds..."
+                Start-Sleep -Seconds 5
+              }
+            }
+            
+            if (-not $success) {
+              Write-Error "Service failed to start within expected time."
+              if (Test-Path "app.log") {
+                Write-Host "Recent application logs:"
+                Get-Content "app.log" -Tail 20
+              }
+              exit 1
+            }
+          
+        - name: Health check
           shell: powershell
           run: |
             try {
-              $res = Invoke-RestMethod http://localhost:3000/api
-              Write-Host "API OK:" $res.message
+              Write-Host "Performing health check..."
+              $res = Invoke-RestMethod "http://localhost:3000/api" -TimeoutSec 10
+              Write-Host "API OK: $($res.message)"
             } catch {
-              Write-Error "Health-check failed"
+              Write-Error "Health check failed: $($_.Exception.Message)"
+              
+              Write-Host "Debug information:"
+              Write-Host "Process status:"
+              if (Get-Process -Id $Env:APP_PID -ErrorAction SilentlyContinue) {
+                Write-Host "Application process is still running."
+              } else {
+                Write-Host "Application process has stopped."
+              }
+              
+              try {
+                $portStatus = Get-NetTCPConnection -LocalPort 3000 -ErrorAction Stop
+                Write-Host "Port 3000 status: $($portStatus.State)"
+              } catch {
+                Write-Host "Port 3000 is not in use."
+              }
+              
               exit 1
             }
