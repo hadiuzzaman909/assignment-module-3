@@ -74,25 +74,71 @@ jobs:
               # If no node processes are found, swallow the error
               Write-Host "No node processes found."
             }
-            
-        - name: Start application
+
+        - name: Start application with logging
           shell: powershell
           run: |
-            Write-Host "Launching src/server.js…"
+            Write-Host "Launching src/server.js..."
             Set-Location $Env:GITHUB_WORKSPACE
-            Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
+            $serverProcess = Start-Process node -ArgumentList 'src/server.js' -PassThru -NoNewWindow `
+              -RedirectStandardOutput server.log -RedirectStandardError errors.log
+            $serverProcess.Id | Out-File server.pid
+            Write-Host "Server started with PID: $($serverProcess.Id)"
 
-        - name: Wait for service to boot
-          shell: powershell
-          run: Start-Sleep -Seconds 5
-
-        - name: Health-check
+        - name: Health-check with retries
           shell: powershell
           run: |
-            try {
-              $res = Invoke-RestMethod http://localhost:3000/api
-              Write-Host "API OK:" $res.message
-            } catch {
-              Write-Error "Health-check failed"
-              exit 1
+            $maxAttempts = 8
+            $attempt = 0
+            $delay = 5
+            $timeout = 10  # seconds for HTTP timeout
+
+            while ($attempt -lt $maxAttempts) {
+                $attempt++
+                Write-Host "Health check attempt $attempt/$maxAttempts"
+                
+                try {
+                    # Use faster timeout for initial checks
+                    $currentTimeout = [math]::Min(5 + ($attempt * 2), $timeout)
+                    $res = Invoke-RestMethod http://localhost:3000/api -TimeoutSec $currentTimeout -ErrorAction Stop
+                    Write-Host "API OK:" $res.message
+                    exit 0
+                }
+                catch {
+                    Write-Host "Service not ready yet. Waiting $delay seconds..."
+                    Start-Sleep -Seconds $delay
+                }
+            }
+
+            Write-Error "Health-check failed after $maxAttempts attempts"
+            Write-Host "`n=== Server Status Diagnostics ==="
+            Write-Host "Netstat for port 3000:"
+            netstat -ano | Select-String ":3000"
+            
+            Write-Host "`nServer process status:"
+            $pid = Get-Content server.pid -ErrorAction SilentlyContinue
+            if ($pid) {
+                Get-Process -Id $pid -ErrorAction SilentlyContinue | Format-List *
+            } else {
+                Write-Host "No server PID found"
+            }
+            
+            Write-Host "`nLast 20 lines of server log:"
+            Get-Content server.log -Tail 20 -ErrorAction SilentlyContinue
+            
+            Write-Host "`nLast 20 lines of error log:"
+            Get-Content errors.log -Tail 20 -ErrorAction SilentlyContinue
+            
+            exit 1
+
+        - name: Post-deployment cleanup
+          if: ${{ always() }}
+          shell: powershell
+          run: |
+            $pidFile = "server.pid"
+            if (Test-Path $pidFile) {
+                $pid = Get-Content $pidFile
+                Write-Host "Stopping server process $pid"
+                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                Remove-Item $pidFile
             }
