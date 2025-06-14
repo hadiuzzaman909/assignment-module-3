@@ -66,7 +66,14 @@ jobs:
           shell: powershell
           run: |
             Write-Host "Stopping any existing Node servers…"
-            Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force || Write-Host "No node processes found."
+            try {
+              # Attempt to find and stop any running node processes
+              Get-Process node -ErrorAction Stop | Stop-Process -Force
+              Write-Host "Existing Node processes stopped."
+            } catch {
+              # If no node processes are found, swallow the error
+              Write-Host "No node processes found."
+            }
 
         - name: Start application
           shell: powershell
