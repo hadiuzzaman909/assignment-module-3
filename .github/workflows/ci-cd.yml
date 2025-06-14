@@ -75,33 +75,38 @@ jobs:
               Write-Host "No node processes found."
             }
 
-        - name: Start application
+        - name: Start & Health-check in one shot
           shell: powershell
           run: |
-            Write-Host "Launching src/server.js…"
-            # Full path to your script
-            $script = "$Env:GITHUB_WORKSPACE\src\server.js"
-            # Start Node with that script and correct cwd
-            Start-Process -FilePath node `
-              -ArgumentList $script `
+            Write-Host "Launching src/server.js & verifying health…"
+            Set-Location $Env:GITHUB_WORKSPACE
+
+            # Start the server as a background process we can track
+            $proc = Start-Process node `
+              -ArgumentList 'src/server.js' `
               -WorkingDirectory $Env:GITHUB_WORKSPACE `
-              -NoNewWindow
+              -PassThru
 
-        - name: Wait for service to boot (and debug)
-          shell: powershell
-          run: |
-            Write-Host "Sleeping 8s for server to bind..."
-            Start-Sleep -Seconds 8
-            Write-Host "Listening on port 3000?"
-            netstat -ano | Select-String ":3000"
+            # Give it up to 15s to come up, polling every 3s
+            $healthy = $false
+            for ($i = 0; $i -lt 5; $i++) {
+              Start-Sleep -Seconds 3
+              try {
+                $res = Invoke-RestMethod http://127.0.0.1:3000/api -ErrorAction Stop
+                Write-Host "API OK:" $res.message
+                $healthy = $true
+                break
+              } catch {
+                Write-Host "Attempt $($i+1): service not yet up..."
+              }
+            }
 
-        - name: Health-check
-          shell: powershell
-          run: |
-            try {
-              $res = Invoke-RestMethod http://127.0.0.1:3000/api
-              Write-Host "API OK:" $res.message
-            } catch {
-              Write-Error "Health-check failed"
+            if (-not $healthy) {
+              Write-Error "Health-check ultimately failed after retries."
+              # Kill the server before exit
+              $proc | Stop-Process -Force
               exit 1
             }
+            
+            # Optionally keep the server alive, or kill if you don’t need it post-check
+            # $proc | Stop-Process -Force
