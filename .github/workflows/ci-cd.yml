@@ -62,12 +62,17 @@ jobs:
         - name: Install dependencies
           run: npm install
 
+        - name: Stop existing Node processes
+          shell: powershell
+          run: |
+            Write-Host "Stopping any existing Node servers…"
+            Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force || Write-Host "No node processes found."
+
         - name: Start application
           shell: powershell
           run: |
             Write-Host "Launching src/server.js…"
             Set-Location $Env:GITHUB_WORKSPACE
-            # Start in the background so this step can complete
             Start-Process node -ArgumentList 'src/server.js' -NoNewWindow
 
         - name: Wait for service to boot
