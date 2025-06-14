@@ -88,24 +88,54 @@ jobs:
               Write-Host "Port 3000 is available."
             }
           
-        - name: Start application with logging
+        - name: Start application with enhanced logging
           shell: powershell
           run: |
-            Write-Host "Starting application..."
+            Write-Host "Starting application with enhanced logging..."
             Set-Location $Env:GITHUB_WORKSPACE
             
-            $process = Start-Process node -ArgumentList 'src/server.js' -PassThru -NoNewWindow
+            # Create a PowerShell script to capture both stdout and stderr
+            $startScript = @"
+            `$process = Start-Process node -ArgumentList 'src/server.js' -PassThru -NoNewWindow -RedirectStandardOutput 'app-stdout.log' -RedirectStandardError 'app-stderr.log'
+            Write-Host "Application started with PID: `$(`$process.Id)"
+            Write-Host "APP_PID=`$(`$process.Id)" | Out-File -FilePath temp-pid.txt
+            "@
             
-            # Store process ID for later reference
-            Write-Host "Application started with PID: $($process.Id)"
-            echo "APP_PID=$($process.Id)" >> $Env:GITHUB_ENV
+            $startScript | Out-File -FilePath "start-app.ps1"
             
-            # Wait and check if process is still running
+            # Execute the start script
+            & .\start-app.ps1
+            
+            # Read the PID from the temp file
+            $pidContent = Get-Content "temp-pid.txt"
+            $appPid = ($pidContent -split "=")[1]
+            echo "APP_PID=$appPid" >> $Env:GITHUB_ENV
+            
+            Write-Host "Application PID stored: $appPid"
+            
+            # Wait a moment and check initial logs
             Start-Sleep -Seconds 3
-            if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
-              Write-Host "Application process is running."
+            
+            Write-Host "`n=== Initial Application Logs ==="
+            if (Test-Path "app-stdout.log") {
+              Write-Host "STDOUT:"
+              Get-Content "app-stdout.log"
             } else {
-              Write-Error "Application process died immediately after start."
+              Write-Host "No stdout log found"
+            }
+            
+            if (Test-Path "app-stderr.log") {
+              Write-Host "STDERR:"
+              Get-Content "app-stderr.log"
+            } else {
+              Write-Host "No stderr log found"
+            }
+            
+            # Verify process is still running
+            if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
+              Write-Host "✓ Application process is running."
+            } else {
+              Write-Error "✗ Application process died immediately after start."
               exit 1
             }
           
