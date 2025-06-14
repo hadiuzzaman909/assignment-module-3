@@ -63,10 +63,10 @@ jobs:
           run: npm install
 
         - name: Stop existing Node processes
-                shell: powershell
-                run: |
-                  Write-Host "Stopping any existing Node servers…"
-                  Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force || Write-Host "No node processes found."
+          shell: powershell
+          run: |
+            Write-Host "Stopping any existing Node servers…"
+            Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force || Write-Host "No node processes found."
 
         - name: Start application
           shell: powershell
